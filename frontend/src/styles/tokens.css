@@ -1,0 +1,56 @@
+/* ═══════════════════════════════════════════════════════════════
+   NID-X Design System Tokens
+   Dark Brutalist / Industrial Control System
+═══════════════════════════════════════════════════════════════ */
+:root {
+  /* Color palette */
+  --c-bg:        #050505;
+  --c-bg-sec:    #0A0A0A;
+  --c-panel:     #101010;
+  --c-panel-sec: #141414;
+  --c-text:      #F5F5F5;
+  --c-text-sec:  #A0A0A0;
+  --c-text-mute: #686868;
+  --c-border:    #292929;
+  --c-border-str:#E8E8E8;
+  --c-red:       #FF3038;
+  --c-red-glow:  rgba(255, 48, 56, 0.12);
+  --c-white:     #FFFFFF;
+
+  /* Typography */
+  --font-display: 'Space Grotesk', 'Archivo Black', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'Space Mono', monospace;
+  --font-body:    'Inter', system-ui, sans-serif;
+
+  /* Font sizes */
+  --fs-xs:   clamp(9px,  1vw, 11px);
+  --fs-sm:   clamp(11px, 1.2vw, 13px);
+  --fs-base: clamp(13px, 1.4vw, 15px);
+  --fs-md:   clamp(15px, 1.6vw, 17px);
+  --fs-lg:   clamp(18px, 2vw, 22px);
+  --fs-xl:   clamp(24px, 3vw, 32px);
+  --fs-2xl:  clamp(32px, 5vw, 56px);
+  --fs-3xl:  clamp(48px, 8vw, 96px);
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* Misc */
+  --radius: 0;
+  --nav-width: 220px;
+  --status-height: 36px;
+  --transition: 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

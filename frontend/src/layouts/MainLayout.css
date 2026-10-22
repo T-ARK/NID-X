@@ -1,0 +1,13 @@
+.main-content {
+  margin-top: var(--status-height);
+  margin-left: var(--nav-width);
+  min-height: calc(100vh - var(--status-height));
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    margin-top: calc(var(--status-height) + 44px); /* status + mobile nav */
+  }
+}

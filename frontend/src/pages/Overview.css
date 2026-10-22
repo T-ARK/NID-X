@@ -1,0 +1,99 @@
+.overview-page {
+  padding: var(--sp-8);
+}
+
+/* ── Hero ─────────────────────────────────────────────────── */
+.overview-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-10);
+  margin-bottom: var(--sp-10);
+  align-items: start;
+}
+
+.hero-left { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.hero-tag {
+  align-self: flex-start;
+  font-size: var(--fs-xs);
+  color: var(--c-text-mute);
+  border-color: var(--c-border);
+}
+
+.hero-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  line-height: 0.93;
+}
+.hero-line {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--c-text);
+}
+
+.hero-copy {
+  font-size: var(--fs-base);
+  color: var(--c-text-sec);
+  line-height: 1.7;
+  max-width: 480px;
+}
+
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.hero-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--c-border);
+  padding-top: var(--sp-4);
+}
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.meta-label {
+  font-size: var(--fs-xs);
+  color: var(--c-text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.meta-value {
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+}
+
+/* ── Network viz ──────────────────────────────────────────── */
+.hero-right { position: relative; }
+
+.network-viz {
+  border: 1px solid var(--c-border);
+  background: var(--c-bg-sec);
+  aspect-ratio: 5/3;
+  overflow: hidden;
+}
+.nv-svg { width: 100%; height: 100%; display: block; }
+
+/* ── Metrics strip ────────────────────────────────────────── */
+.overview-metrics { }
+
+@media (max-width: 1024px) {
+  .overview-hero { grid-template-columns: 1fr; }
+  .hero-line { font-size: clamp(40px, 8vw, 72px); }
+}
+
+@media (max-width: 640px) {
+  .overview-page { padding: var(--sp-4); }
+  .hero-line { font-size: clamp(36px, 10vw, 60px); }
+  .hero-cta { flex-direction: column; }
+  .hero-meta { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.env
+
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases
+*.db
+*.db-wal
+*.db-shm
+
+# Frontend / Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+
+# Large Datasets (keep sample)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated model artifacts (must be produced by user training, not committed)
+models/intrusion_model.joblib
+models/model_metadata.json
+models/feature_schema.json
+
+# Generated reports and figures (produced at runtime, not committed)
+reports/evaluation_report.json
+reports/data_quality_report.json
+reports/model_comparison.csv
+reports/predictions.csv
+reports/analytical_report*.json
+reports/analytical_report*.md
+reports/figures/*.png
+
+# SQLite database (runtime state, never committed)
+backend/nidx.db
