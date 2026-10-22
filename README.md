@@ -66,30 +66,35 @@
 - Node.js 18+ and npm 9+
 
 ### Windows (PowerShell)
-Run these commands from the project root:
+Run from the project root. This creates the backend virtual environment and installs
+the Python dependencies into it:
 ```powershell
-py -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install -r backend\requirements.txt
+py -m venv backend\venv
+.\backend\venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
-Install the frontend dependencies:
+Install the frontend dependencies from the frontend directory:
 ```powershell
 cd frontend
-npm install
-cd ..
+npm ci
 ```
 
+Keep this terminal in `frontend` for the frontend start command in Section 6.
 The backend uses its built-in defaults; creating a `.env` file is optional.
 
-### Linux / macOS
-Run these commands from the project root:
+### Linux
+Run from the project root:
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r backend/requirements.txt
-cd frontend && npm install && cd ..
+python3 -m venv backend/venv
+source backend/venv/bin/activate
+python -m pip install -r backend/requirements.txt
+cd frontend
+npm ci
 ```
+
+Keep the frontend terminal in `frontend` for the frontend start command in
+Section 6. On macOS, use the same commands, provided Python 3 and Node.js/npm
+are installed.
 
 ---
 
@@ -185,6 +190,9 @@ python scripts/evaluate_model.py --dataset data/raw/network_flows.csv
 
 ### Windows (PowerShell) — Two Terminals
 
+Open two terminals at the project root. Complete the installation steps in
+Section 4 first.
+
 **Terminal 1 — Backend:**
 ```powershell
 .\backend\venv\Scripts\python.exe -m uvicorn backend.app.main:app `
@@ -197,26 +205,29 @@ cd frontend
 npm run dev -- --host 127.0.0.1
 ```
 
-Open the dashboard at **`http://127.0.0.1:5173`**. The backend API is at **`http://127.0.0.1:8000`**.
+Open **`http://127.0.0.1:5173`**. The backend API is at
+**`http://127.0.0.1:8000`**.
 
-### Linux / macOS — One-Command Orchestration
+### Linux / macOS — Two Terminals
+
+Open two terminals at the project root. Complete the installation steps in
+Section 4 first; activate the backend virtual environment in the backend
+terminal if it is not already active.
+
+**Terminal 1 — Backend:**
 ```bash
-./run.sh all
+source backend/venv/bin/activate
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-*Starts FastAPI backend on `http://127.0.0.1:8000` and Vite frontend on `http://localhost:5173` in parallel.*
 
-### Linux / macOS — Running Services Individually
+**Terminal 2 — Frontend:**
 ```bash
-# Terminal 1 - Backend
-source venv/bin/activate
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
-
-# Terminal 2 - Frontend
 cd frontend
-npm run dev
+npm run dev -- --host 127.0.0.1
 ```
 
-Visit the dashboard at: **`http://localhost:5173`**
+Open **`http://127.0.0.1:5173`**. The backend API is at
+**`http://127.0.0.1:8000`**.
 
 ---
 
@@ -342,4 +353,4 @@ npm run build
 
 Use `--fast` for demos, CI pipelines, or whenever you need a trained model quickly.
 Use the standard run when you want the most reliable cross-validated model comparison.
-# sss
+
