@@ -93,6 +93,8 @@ export interface TrafficEvaluation {
   precision: number;
   recall: number;
   f1_score: number;
+  roc_auc?: number | null;
+  pr_auc?: number | null;
   false_positive_rate: number;
   false_negative_rate: number;
   confusion_matrix: number[][];

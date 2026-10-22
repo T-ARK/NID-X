@@ -12,7 +12,6 @@ export function ConfusionMatrix({ matrix, labels = ['BENIGN', 'ATTACK'] }: Props
 
   return (
     <div>
-      <div className="panel-title" style={{ marginBottom: 'var(--sp-3)' }}>Confusion Matrix</div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)' }}>
           <thead>

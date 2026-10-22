@@ -20,13 +20,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
-    accuracy_score, auc, confusion_matrix, f1_score,
-    precision_recall_curve, precision_score, recall_score,
+    accuracy_score, auc, average_precision_score, confusion_matrix, f1_score,
+    precision_recall_curve, precision_score, recall_score, roc_auc_score,
     roc_curve,
 )
 
 from backend.app.core.config import settings
 from backend.app.services.prediction_service import _load_model, align_input, load_feature_schema
+from backend.app.services.report_service import is_sample_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,16 @@ def analyze_uploaded_traffic(
         aligned_df = align_input(df_features, feature_names)
     else:
         aligned_df = df_features
+
+    non_finite_count = int(
+        aligned_df.isna().sum().sum()
+        + aligned_df.isin([np.inf, -np.inf]).sum().sum()
+    )
+    if non_finite_count:
+        aligned_df = aligned_df.replace([np.inf, -np.inf], np.nan)
+        warnings.append(
+            f"{non_finite_count} infinite/missing values were replaced before prediction."
+        )
 
     t0 = time.perf_counter()
     y_prob = None
@@ -564,11 +575,18 @@ def analyze_uploaded_traffic(
         except Exception as e:
             logger.warning("Could not generate PR curve: %s", e)
 
-    # ── Universal Persistence: Update evaluation_report.json & model_metadata.json ──
-    # Skip persistence when the analyzed file is the bundled sample dataset so that
-    # sample-derived numbers never silently overwrite the clean state.
-    _SAMPLE_NAMES = {"sample_flows.csv"}
-    _is_sample_upload = any(s in filename for s in _SAMPLE_NAMES)
+    if evaluation_metrics is not None:
+        valid_idx = ~np.isnan(prob_scores)
+        labels = np.asarray(y_true_binary)[valid_idx] if y_true_binary is not None else np.array([])
+        scores = prob_scores[valid_idx]
+        if binary_mode and labels.size > 0 and np.unique(labels).size == 2:
+            roc_auc_score_val = round(float(roc_auc_score(labels, scores)), 4)
+            pr_auc_score_val = round(float(average_precision_score(labels, scores)), 4)
+        evaluation_metrics["roc_auc"] = roc_auc_score_val
+        evaluation_metrics["pr_auc"] = pr_auc_score_val
+
+    # Persist this upload's evaluation without changing the model's training provenance.
+    _is_sample_upload = is_sample_dataset(filename)
 
     if not _is_sample_upload:
         try:
@@ -581,8 +599,8 @@ def analyze_uploaded_traffic(
                 "f1_score": evaluation_metrics["f1_score"] if has_gt else None,
                 "false_positive_rate": evaluation_metrics["false_positive_rate"] if has_gt else None,
                 "false_negative_rate": evaluation_metrics["false_negative_rate"] if has_gt else None,
-                "roc_auc": roc_auc_score_val if roc_auc_score_val is not None else (round(float(evaluation_metrics.get("accuracy", 0.95)), 4) if has_gt else None),
-                "pr_auc": pr_auc_score_val if pr_auc_score_val is not None else (round(float(evaluation_metrics.get("precision", 0.95)), 4) if has_gt else None),
+                "roc_auc": evaluation_metrics.get("roc_auc") if has_gt else None,
+                "pr_auc": evaluation_metrics.get("pr_auc") if has_gt else None,
                 "confusion_matrix": evaluation_metrics["confusion_matrix"] if has_gt else None,
                 "n_train": None,
                 "n_test": total_records,
@@ -593,6 +611,10 @@ def analyze_uploaded_traffic(
                 "metadata": {
                     "model_name": model_ver,
                     "dataset_source": filename,
+                    "model_training_dataset_source": (
+                        metadata.get("training_dataset_source")
+                        or metadata.get("dataset_source")
+                    ),
                     "training_timestamp": timestamp,
                     "has_ground_truth": has_gt,
                     "total_records": total_records,
@@ -606,20 +628,6 @@ def analyze_uploaded_traffic(
             logger.info("Persisted updated evaluation report from analyzed traffic: %s", filename)
         except Exception as re:
             logger.warning("Could not persist evaluation_report.json: %s", re)
-
-        try:
-            if settings.metadata_path.exists():
-                with open(settings.metadata_path) as mf:
-                    curr_md = json.load(mf)
-                curr_md["dataset_source"] = filename
-                curr_md["last_ingested_at"] = timestamp
-                curr_md["last_ingested_records"] = total_records
-                curr_md["last_ingested_threat_level"] = overall_threat_level
-                with open(settings.metadata_path, "w") as mf:
-                    json.dump(curr_md, mf, indent=2)
-                logger.info("Updated model_metadata.json with uploaded dataset: %s", filename)
-        except Exception as me:
-            logger.warning("Could not update model_metadata.json: %s", me)
     else:
         logger.info(
             "Skipping evaluation_report.json / model_metadata.json update: sample dataset (%s) is not persisted.",
@@ -724,7 +732,7 @@ Ground-truth column `{evaluation_metrics['label_column']}` was verified in this 
     report_md_path = settings.REPORTS_DIR / f"analytical_report_{batch_short}.md"
     report_json_path = settings.REPORTS_DIR / f"analytical_report_{batch_short}.json"
 
-    with open(report_md_path, "w") as f:
+    with open(report_md_path, "w", encoding="utf-8") as f:
         f.write(report_content_md)
 
     analytical_report = {

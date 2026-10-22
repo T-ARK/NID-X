@@ -9,7 +9,6 @@ export function ModelComparison({ data, best }: Props) {
   if (!data || data.length === 0) return null;
   return (
     <div>
-      <div className="panel-title" style={{ marginBottom: 'var(--sp-3)' }}>Model Comparison</div>
       <div className="table-wrap">
         <table>
           <thead>

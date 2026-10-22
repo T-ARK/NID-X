@@ -11,6 +11,10 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+function trafficFigureBatch(reportId: string): string | null {
+  return reportId.match(/^figure_traffic_.+_([a-f0-9]{8})$/i)?.[1].toLowerCase() ?? null;
+}
+
 export default function Reports() {
   const [reports, setReports] = useState<ReportEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +25,7 @@ export default function Reports() {
   const [previewDoc, setPreviewDoc] = useState<{ id: string; name: string; type: string; content: string } | null>(null);
   const [docLoading, setDocLoading] = useState(false);
   const [cacheKey, setCacheKey] = useState<number>(Date.now());
+  const [selectedFigureBatch, setSelectedFigureBatch] = useState('');
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -72,6 +77,22 @@ export default function Reports() {
 
   const documentReports = reports.filter(r => !r.report_id.startsWith('figure_'));
   const figureReports = reports.filter(r => r.report_id.startsWith('figure_'));
+  const figureBatchMap = new Map<string, { id: string; createdAt: string | null; figures: ReportEntry[] }>();
+  figureReports.forEach(figure => {
+    const batchId = trafficFigureBatch(figure.report_id);
+    if (!batchId) return;
+    const batch = figureBatchMap.get(batchId) ?? { id: batchId, createdAt: figure.created_at, figures: [] };
+    batch.figures.push(figure);
+    if ((figure.created_at ?? '') > (batch.createdAt ?? '')) batch.createdAt = figure.created_at;
+    figureBatchMap.set(batchId, batch);
+  });
+  const figureBatches = Array.from(figureBatchMap.values())
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  const activeFigureBatch = figureBatches.find(batch => batch.id === selectedFigureBatch) ?? figureBatches[0];
+  const visibleFigureReports = [
+    ...figureReports.filter(figure => !trafficFigureBatch(figure.report_id)),
+    ...(activeFigureBatch?.figures ?? []),
+  ];
 
   return (
     <div className="page" style={{ padding: 'var(--sp-8)' }}>
@@ -217,12 +238,32 @@ export default function Reports() {
           <div className="panel">
             <div className="panel-header">
               <span className="panel-title">Visual Evidence / Evaluation Charts</span>
-              <span className="font-mono text-mute" style={{ fontSize: 'var(--fs-xs)' }}>
-                {figureReports.length} FIGURES AVAILABLE
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
+                {figureBatches.length > 1 && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', color: 'var(--c-text-mute)', fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)' }}>
+                    BATCH
+                    <select
+                      className="input"
+                      aria-label="Select traffic figure batch"
+                      value={activeFigureBatch?.id ?? ''}
+                      onChange={event => setSelectedFigureBatch(event.target.value)}
+                      style={{ width: 'auto', minWidth: 220 }}
+                    >
+                      {figureBatches.map((batch, index) => (
+                        <option key={batch.id} value={batch.id}>
+                          {index === 0 ? 'LATEST' : 'OLDER'} — {batch.id.toUpperCase()} — {batch.createdAt ? new Date(batch.createdAt).toLocaleString() : 'DATE N/A'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <span className="font-mono text-mute" style={{ fontSize: 'var(--fs-xs)' }}>
+                  {visibleFigureReports.length} SHOWN / {figureReports.length} AVAILABLE
+                </span>
+              </div>
             </div>
 
-            {figureReports.length === 0 ? (
+            {visibleFigureReports.length === 0 ? (
               <EmptyState
                 title="NO CHARTS GENERATED"
                 desc="Click 'GENERATE ALL REPORTS' above or evaluate the model to create ROC curves, confusion matrices, and feature importance charts."
@@ -233,7 +274,7 @@ export default function Reports() {
                 gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
                 gap: 'var(--sp-4)',
               }}>
-                {figureReports.map(fig => (
+                {visibleFigureReports.map(fig => (
                   <div
                     key={fig.report_id}
                     style={{

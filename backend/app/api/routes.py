@@ -29,7 +29,8 @@ from backend.app.services.prediction_service import (
     get_model_version, is_model_available, predict_dataframe, predict_records,
 )
 from backend.app.services.report_service import (
-    generate_summary_report, get_report_path, list_reports,
+    generate_summary_report, get_report_path, is_sample_dataset, list_reports,
+    model_trained_on_sample,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,13 +81,17 @@ def model_info():
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
 
-_SAMPLE_FILENAMES = {"sample_flows.csv"}
-
-
 def _report_is_sample(report: dict) -> bool:
-    """Return True if the evaluation report was produced from the bundled sample data."""
-    src = (report.get("metadata") or {}).get("dataset_source", "")
-    return any(s in src for s in _SAMPLE_FILENAMES)
+    """Return True when the evaluation uses sample data or a sample-trained model."""
+    metadata = report.get("metadata") or {}
+    return any(
+        is_sample_dataset(source)
+        for source in (
+            metadata.get("dataset_source"),
+            metadata.get("model_training_dataset_source"),
+            metadata.get("training_dataset_source"),
+        )
+    )
 
 
 @router.get("/metrics", response_model=MetricsResponse)
@@ -95,7 +100,9 @@ def metrics():
     if report is None:
         return MetricsResponse(available=False)
 
-    is_sample = _report_is_sample(report)
+    is_sample = _report_is_sample(report) or model_trained_on_sample()
+    if is_sample:
+        return MetricsResponse(available=False, is_sample_data=True)
 
     pc_raw = report.get("per_class") or {}
     per_class = {
@@ -357,7 +364,10 @@ def overview_stats():
     stats = get_overview_stats()
     eval_rep = load_evaluation_report()
     if eval_rep is not None:
-        eval_rep["is_sample_data"] = _report_is_sample(eval_rep)
+        is_sample = _report_is_sample(eval_rep) or model_trained_on_sample()
+        if is_sample:
+            eval_rep = {key: None for key in eval_rep}
+        eval_rep["is_sample_data"] = is_sample
     stats["metrics"] = eval_rep
     return stats
 
@@ -428,6 +438,11 @@ def generate_report():
     """Regenerate figures from the last evaluation if a trained model is available."""
     if not is_model_available():
         raise HTTPException(status_code=503, detail="No trained model. Run train_model.py first.")
+    if model_trained_on_sample():
+        raise HTTPException(
+            status_code=400,
+            detail="The active model was trained on bundled sample data. Train it on your own dataset before generating evaluation visualizations.",
+        )
 
     import json
     import joblib
@@ -549,4 +564,3 @@ def trigger_training(bg: BackgroundTasks, dataset: Optional[str] = None):
         )
     bg.add_task(_bg_train_worker, str(target))
     return {"message": "Model training started in background using user-uploaded dataset.", "status": "started"}
-

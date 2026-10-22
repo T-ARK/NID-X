@@ -51,3 +51,12 @@ reports/figures/*.png
 
 # SQLite database (runtime state, never committed)
 backend/nidx.db
+.venv/
+.venv-1/
+node_modules/
+.pytest_cache/
+__pycache__/
+*.db
+data/test/
+
+reports/predictions_*.csv

@@ -2,12 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { MetricPanel } from '../components/Common';
-import type { MetricsResponse, ModelInfoResponse } from '../types/api';
+import type { AnalyticalReport, MetricsResponse, ModelInfoResponse } from '../types/api';
 import './Overview.css';
 
 function fmt(v: number | null | undefined, isPercent = true): string {
   if (v == null) return 'N/A';
   return isPercent ? `${(v * 100).toFixed(2)}%` : String(v);
+}
+
+function parseAnalyticalReport(content: string): AnalyticalReport {
+  const validJson = content.replace(/(^|[:,\[\]\s])(-?Infinity|NaN)(?=[,\]\}\s])/g, '$1null');
+  return JSON.parse(validJson) as AnalyticalReport;
 }
 
 function NetworkViz() {
@@ -66,6 +71,8 @@ export default function Overview() {
   const [stats, setStats] = useState<any>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfoResponse | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [latestUserEvaluation, setLatestUserEvaluation] = useState<AnalyticalReport | null>(null);
+  const [evaluationError, setEvaluationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadAll = useCallback(async () => {
@@ -79,6 +86,25 @@ export default function Overview() {
       setStats(st);
       setModelInfo(md);
       setMetrics(mt);
+      try {
+        const reportList = await api.reports();
+        const latestEvaluationReport = reportList.reports
+          .filter(report => report.available
+            && report.type === 'json'
+            && report.report_id.startsWith('analytical_report_')
+            && report.report_id.endsWith('_json'))
+          .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
+        if (latestEvaluationReport) {
+          const reportText = await api.fetchReportText(latestEvaluationReport.report_id);
+          setLatestUserEvaluation(parseAnalyticalReport(reportText));
+        } else {
+          setLatestUserEvaluation(null);
+        }
+        setEvaluationError(null);
+      } catch (e) {
+        setLatestUserEvaluation(null);
+        setEvaluationError(e instanceof Error ? e.message : 'Could not load uploaded-data evaluation');
+      }
     } finally {
       setLoading(false);
     }
@@ -98,6 +124,13 @@ export default function Overview() {
   const latestBatch = stats?.latest_batch;
   const latestBatchThreat = latestBatch?.summary?.threat_level ?? (stats?.total_attacks_detected > 0 ? 'ANOMALIES DETECTED' : 'NORMAL');
   const latestFilename = latestBatch?.summary?.filename ?? (latestBatch?.batch_id ? `Batch ${latestBatch.batch_id.slice(0, 8)}` : 'None');
+  const uploadedEvaluation = latestUserEvaluation?.evaluation_metrics?.has_ground_truth
+    ? latestUserEvaluation.evaluation_metrics
+    : null;
+  const displayedMetrics = uploadedEvaluation ?? (isSampleMetrics ? null : metrics);
+  const evaluatedAt = uploadedEvaluation
+    ? latestUserEvaluation?.timestamp
+    : isSampleMetrics ? undefined : metrics?.evaluated_at;
 
   return (
     <div className="overview-page">
@@ -187,70 +220,65 @@ export default function Overview() {
         {/* Model Evaluation & Performance Strip */}
         <div className="panel">
           <div className="panel-header">
-            <span className="panel-title">
-              EVALUATION METRICS
-              {isSampleMetrics && (
-                <span style={{
-                  marginLeft: 10,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--fs-xs)',
-                  color: '#E5A000',
-                  fontWeight: 400,
-                  border: '1px solid #E5A000',
-                  padding: '1px 6px',
-                  letterSpacing: '0.04em',
-                }}>
-                  DEMO MODEL — TRAINED ON SYNTHETIC SAMPLE DATA
-                </span>
-              )}
-            </span>
+            <span className="panel-title">EVALUATION METRICS</span>
             <span className="tag font-mono">
-              EVALUATED AT: {metrics?.evaluated_at ? new Date(metrics.evaluated_at).toLocaleString() : 'RECENT'}
+              {uploadedEvaluation && latestUserEvaluation
+                ? `USER DATA: ${latestUserEvaluation.filename}`
+                : evaluatedAt
+                  ? `EVALUATED AT: ${new Date(evaluatedAt).toLocaleString()}`
+                  : 'NO USER DATA EVALUATED'}
             </span>
           </div>
-          {isSampleMetrics && (
+          {isSampleMetrics && !uploadedEvaluation && (
             <div style={{
-              background: 'rgba(229,160,0,0.08)',
-              border: '1px solid rgba(229,160,0,0.35)',
               padding: 'var(--sp-2) var(--sp-3)',
               fontFamily: 'var(--font-mono)',
               fontSize: 'var(--fs-xs)',
-              color: '#E5A000',
+              color: 'var(--c-text-mute)',
               marginBottom: 'var(--sp-4)',
             }}>
-              ⚠ These metrics reflect the <strong>bundled demo model trained on synthetic sample data (300 rows)</strong>.
-              Upload your own network traffic CSV to replace them with real-world evaluation results.
+              Upload and analyze your own network traffic CSV to display evaluation metrics here.
             </div>
           )}
-          <div className="grid-4">
+          {evaluationError && (
+            <p role="alert" style={{ color: 'var(--c-red)', fontSize: 'var(--fs-xs)', margin: '0 0 var(--sp-3)' }}>
+              Could not load uploaded-data evaluation: {evaluationError}
+            </p>
+          )}
+          <div className="grid-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
             <MetricPanel
               label="Accuracy"
-              value={fmt(metrics?.accuracy)}
+              value={fmt(displayedMetrics?.accuracy)}
               sub="Correct classifications"
             />
             <MetricPanel
               label="Precision"
-              value={fmt(metrics?.precision)}
+              value={fmt(displayedMetrics?.precision)}
               sub="Positive predictive value"
             />
             <MetricPanel
               label="Recall / Detection Rate"
-              value={fmt(metrics?.recall)}
+              value={fmt(displayedMetrics?.recall)}
               sub="True positive sensitivity"
             />
             <MetricPanel
               label="F1-Score"
-              value={fmt(metrics?.f1_score)}
+              value={fmt(displayedMetrics?.f1_score)}
               sub="Harmonic mean of precision & recall"
             />
             <MetricPanel
               label="ROC-AUC"
-              value={fmt(metrics?.roc_auc)}
+              value={fmt(displayedMetrics?.roc_auc)}
               sub="Discrimination capacity"
             />
             <MetricPanel
+              label="PR-AUC (AP)"
+              value={fmt(displayedMetrics?.pr_auc, false)}
+              sub="Average precision"
+            />
+            <MetricPanel
               label="False Positive Rate"
-              value={fmt(metrics?.false_positive_rate)}
+              value={fmt(displayedMetrics?.false_positive_rate)}
               sub="False alarms on benign traffic"
               red
             />

@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
@@ -19,10 +20,116 @@ REPORT_REGISTRY = [
     ("data_quality", "Data Quality Report (JSON)", "json", settings.data_quality_path),
 ]
 
+EVALUATION_FIGURES = {
+    "class_distribution",
+    "error_analysis",
+    "confusion_matrix",
+    "roc_curve",
+    "pr_curve",
+    "feature_importance",
+    "model_comparison",
+    "numeric_distributions",
+    "correlation_heatmap",
+}
+
+
+def is_sample_dataset(source: object) -> bool:
+    normalized = str(source or "").replace("\\", "/").rstrip("/").lower()
+    return normalized == "sample_flows.csv" or normalized.endswith("/sample_flows.csv")
+
+
+def model_trained_on_sample() -> bool:
+    """Treat sample-trained or legacy-ingestion metadata as untrusted provenance."""
+    if not settings.metadata_path.exists():
+        return False
+    with open(settings.metadata_path, encoding="utf-8") as metadata_file:
+        metadata = json.load(metadata_file)
+    if metadata.get("last_ingested_at"):
+        return True
+    source = metadata.get("training_dataset_source") or metadata.get("dataset_source")
+    return is_sample_dataset(source)
+
+
+def _report_source(path: Path) -> str | None:
+    if path.suffix.lower() == ".json":
+        with open(path, encoding="utf-8") as report_file:
+            report = json.load(report_file)
+        metadata = report.get("metadata") or {}
+        return (
+            metadata.get("dataset_source")
+            or report.get("dataset_source")
+            or report.get("filename")
+            or ""
+        )
+    if path.suffix.lower() == ".md":
+        content = path.read_text(encoding="utf-8")
+        match = re.search(r"^\*\*Analyzed File:\*\*\s*`?([^`\r\n]+)", content, re.MULTILINE)
+        return match.group(1).strip() if match else None
+    return None
+
+
+def _sample_analytical_report(path: Path) -> bool:
+    return path.exists() and is_sample_dataset(_report_source(path))
+
+
+def _sample_evaluation_report(path: Path) -> bool:
+    if not path.exists():
+        return False
+    with open(path, encoding="utf-8") as report_file:
+        report = json.load(report_file)
+    metadata = report.get("metadata") or {}
+    return any(
+        is_sample_dataset(source)
+        for source in (
+            metadata.get("dataset_source"),
+            metadata.get("model_training_dataset_source"),
+            metadata.get("training_dataset_source"),
+        )
+    )
+
+
+def _sample_report_batches() -> set[str]:
+    batches = set()
+    for report_file in settings.REPORTS_DIR.glob("analytical_report_*.json"):
+        if _sample_analytical_report(report_file):
+            report = json.loads(report_file.read_text(encoding="utf-8"))
+            batch = report.get("batch_short") or str(report.get("batch_id", ""))[:8]
+            if batch:
+                batches.add(batch)
+    return batches
+
+
+def _hidden_sample_report(report_id: str, path: Path) -> bool:
+    if path.exists() and path.stat().st_size == 0:
+        return True
+
+    if report_id == "evaluation_report":
+        return model_trained_on_sample() or _sample_evaluation_report(path)
+    if report_id == "data_quality":
+        return is_sample_dataset(_report_source(path))
+    if report_id == "model_comparison":
+        return model_trained_on_sample() or _sample_evaluation_report(settings.evaluation_report_path)
+    if report_id.startswith("analytical_report_"):
+        return is_sample_dataset(_report_source(path))
+    if report_id.startswith("predictions_"):
+        return report_id.removeprefix("predictions_") in _sample_report_batches()
+    if report_id.startswith("figure_"):
+        stem = report_id.removeprefix("figure_")
+        if stem in EVALUATION_FIGURES:
+            return model_trained_on_sample() or _sample_evaluation_report(settings.evaluation_report_path)
+        if stem.startswith("traffic_"):
+            batch = stem.rsplit("_", 1)[-1]
+            report_path = settings.REPORTS_DIR / f"analytical_report_{batch}.json"
+            return not report_path.exists() or _sample_analytical_report(report_path)
+        return any(stem.endswith(f"_{batch}") for batch in _sample_report_batches())
+    return False
+
 
 def list_reports() -> List[dict]:
     reports = []
     for report_id, name, rtype, path in REPORT_REGISTRY:
+        if _hidden_sample_report(report_id, path):
+            continue
         if path.exists():
             stat = path.stat()
             reports.append({
@@ -45,8 +152,11 @@ def list_reports() -> List[dict]:
     # Dynamically discover all analytical reports and prediction CSVs
     for report_file in sorted(settings.REPORTS_DIR.glob("analytical_report_*.*"), reverse=True):
         suffix = report_file.suffix.lstrip(".")
+        report_id = report_file.stem if suffix == "md" else report_file.name.replace(".", "_")
+        if _hidden_sample_report(f"analytical_report_{report_file.stem.removeprefix('analytical_report_')}", report_file):
+            continue
         reports.append({
-            "report_id": report_file.stem if suffix == "md" else report_file.name.replace(".", "_"),
+            "report_id": report_id,
             "name": f"Traffic Analysis Report ({suffix.upper()}): {report_file.stem.replace('analytical_report_', '')}",
             "type": suffix,
             "size_bytes": report_file.stat().st_size,
@@ -55,6 +165,8 @@ def list_reports() -> List[dict]:
         })
 
     for pred_file in sorted(settings.REPORTS_DIR.glob("predictions_*.csv"), reverse=True):
+        if _hidden_sample_report(pred_file.stem, pred_file):
+            continue
         reports.append({
             "report_id": pred_file.stem,
             "name": f"Predictions Export (CSV): {pred_file.stem.replace('predictions_', '')}",
@@ -66,6 +178,8 @@ def list_reports() -> List[dict]:
 
     # Also list figure files
     for fig in sorted(settings.FIGURES_DIR.glob("*.png"), reverse=True):
+        if _hidden_sample_report(f"figure_{fig.stem}", fig):
+            continue
         reports.append({
             "report_id": f"figure_{fig.stem}",
             "name": f"Figure: {fig.stem.replace('_', ' ').title()}",
@@ -79,12 +193,17 @@ def list_reports() -> List[dict]:
 
 def get_report_path(report_id: str) -> Path:
     """Resolve a report_id to a safe filesystem path."""
+    def visible(path: Path) -> Path:
+        if _hidden_sample_report(report_id, path):
+            raise FileNotFoundError(f"Report '{report_id}' is unavailable because it contains sample-data results.")
+        return path
+
     # Static registry
     for rid, _, _, path in REPORT_REGISTRY:
         if rid == report_id:
             if not path.exists():
                 raise FileNotFoundError(f"Report '{report_id}' has not been generated yet.")
-            return path
+            return visible(path)
 
     # Dynamic analytical reports & predictions
     if report_id.startswith("analytical_report_") or report_id.startswith("predictions_"):
@@ -92,21 +211,21 @@ def get_report_path(report_id: str) -> Path:
         for ext in [".md", ".json", ".csv"]:
             p = settings.REPORTS_DIR / f"{report_id}{ext}"
             if p.exists() and p.parent.resolve() == settings.REPORTS_DIR.resolve():
-                return p
+                return visible(p)
         # Check underscore replacement (e.g. analytical_report_12345678_json)
         for ext in ["json", "md", "csv"]:
             if report_id.endswith(f"_{ext}"):
                 base = report_id[:-len(f"_{ext}")]
                 p = settings.REPORTS_DIR / f"{base}.{ext}"
                 if p.exists() and p.parent.resolve() == settings.REPORTS_DIR.resolve():
-                    return p
+                    return visible(p)
 
     # Figures
     if report_id.startswith("figure_"):
         stem = report_id[len("figure_"):]
         path = settings.FIGURES_DIR / f"{stem}.png"
         if path.exists() and path.parent.resolve() == settings.FIGURES_DIR.resolve():
-            return path
+            return visible(path)
     raise ValueError(f"Unknown report: {report_id}")
 
 

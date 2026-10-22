@@ -35,15 +35,19 @@ export default function TrafficAnalysis() {
 
   const handleLoadSample = async () => {
     setState('loading');
+    setIsDemoSample(true);
     setError('');
     try {
       const sampleFile = await api.getSampleDataset();
       setFile(sampleFile);
-      setIsDemoSample(true);
-      setState('idle');
-      setResult(null);
+      const res = await api.predictCsv(sampleFile);
+      setResult(res);
+      setState('success');
+      if (res.charts && res.charts.length > 0) {
+        setSelectedFigure(res.charts[0].url);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch demonstration sample dataset.');
+      setError(e instanceof Error ? e.message : 'Failed to load or analyze demonstration sample dataset.');
       setState('error');
     }
   };
@@ -208,16 +212,16 @@ ${r.recommendations.map(x => `- ${x}`).join('\n')}
                 }}>
                   <p style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--c-text-mute)', margin: 0, lineHeight: 1.7 }}>
                     300-row synthetic sample (used to train the bundled demo model).
-                    Results will <strong style={{ color: '#E5A000' }}>NOT</strong> update the global metrics.
+                    Loading it analyzes the sample and records the resulting batch in live telemetry.
                   </p>
                   <button
                     className="btn btn-secondary"
                     onClick={handleLoadSample}
                     disabled={state === 'loading'}
                     style={{ alignSelf: 'flex-start' }}
-                    title="Fetches sample_flows.csv on demand — does not auto-load on startup"
+                    title="Loads and analyzes sample_flows.csv only when clicked"
                   >
-                    {state === 'loading' ? 'LOADING...' : 'LOAD SAMPLE DEMO DATA'}
+                    {state === 'loading' ? 'LOADING AND ANALYZING...' : 'LOAD SAMPLE DATA'}
                   </button>
                 </div>
               </div>
@@ -240,7 +244,7 @@ ${r.recommendations.map(x => `- ${x}`).join('\n')}
                 <span>
                   <strong>{file.name}</strong> — {(file.size / 1024).toFixed(1)} KB
                   {isDemoSample && (
-                    <span style={{ color: '#00F0FF', marginLeft: 10 }}>[DEMO SAMPLE — results will not update global metrics]</span>
+                    <span style={{ color: '#00F0FF', marginLeft: 10 }}>[DEMO SAMPLE — recorded as an analysis batch]</span>
                   )}
                 </span>
                 <button
@@ -270,7 +274,12 @@ ${r.recommendations.map(x => `- ${x}`).join('\n')}
       {state === 'loading' && (
         <LoadingState label="Computing flow metrics, threat probabilities, and rendering charts..." />
       )}
-      {state === 'error' && <ErrorState message={error} onRetry={handleUpload} />}
+      {state === 'error' && (
+        <ErrorState
+          message={error}
+          onRetry={isDemoSample ? (file ? handleUpload : handleLoadSample) : (file ? handleUpload : undefined)}
+        />
+      )}
 
       {/* Analysis Output Section */}
       {state === 'success' && result && (
@@ -291,7 +300,7 @@ ${r.recommendations.map(x => `- ${x}`).join('\n')}
                 ● ANALYSIS COMPLETE
                 {isDemoSample && (
                   <span style={{ color: '#E5A000', marginLeft: 10, fontWeight: 400 }}>
-                    [DEMO SAMPLE — global metrics not updated]
+                    [DEMO SAMPLE — logged in live telemetry]
                   </span>
                 )}
               </div>
